@@ -4,6 +4,21 @@ import json, subprocess, sys, urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 class SearchHandler(BaseHTTPRequestHandler):
+    CORS = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    }
+
+    def end_headers(self):
+        for k, v in self.CORS.items():
+            self.send_header(k, v)
+        super().end_headers()
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.end_headers()
+
     def do_GET(self):
         if not self.path.startswith('/search'):
             self.send_error(404); return
@@ -48,18 +63,20 @@ class SearchHandler(BaseHTTPRequestHandler):
             html = r.stdout
             results = []
             # Simple extraction of search results
-            import re
+            import re, html as _html
             # Match Bing result blocks
             blocks = re.findall(r'<li class="b_algo"[^>]*>(.*?)</li>', html, re.DOTALL)
             for block in blocks[:8]:
                 link_match = re.search(r'<a[^>]*href="(https?://[^"]+)"', block)
-                title_match = re.search(r'<a[^>]*>(.*?)</a>', block, re.DOTALL)
+                h2 = re.search(r'<h2[^>]*>(.*?)</h2>', block, re.DOTALL)
+                title_match = re.search(r'<a[^>]*>(.*?)</a>', h2.group(1) if h2 else block, re.DOTALL)
                 snippet_match = re.search(r'<p[^>]*>(.*?)</p>', block, re.DOTALL)
                 if link_match and title_match:
+                    clean = lambda s: _html.unescape(re.sub(r'<[^>]+>', '', _html.unescape(s))).strip()
                     results.append({
-                        "title": re.sub(r'<[^>]+>', '', title_match.group(1)).strip(),
+                        "title": clean(title_match.group(1)),
                         "url": link_match.group(1),
-                        "content": re.sub(r'<[^>]+>', '', snippet_match.group(1) if snippet_match else '').strip()[:300],
+                        "content": clean(snippet_match.group(1) if snippet_match else '')[:300],
                         "engine": "bing"
                     })
             return results
